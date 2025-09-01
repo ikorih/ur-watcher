@@ -2,7 +2,7 @@ name: Watch UR Vacancy
 
 on:
   schedule:
-    - cron: "*/20 * * * *" # 20分ごと（UTC）
+    - cron: "*/10 * * * *" # 20分ごと（UTC）
   workflow_dispatch:
 
 jobs:
