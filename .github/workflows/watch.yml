@@ -31,4 +31,5 @@ jobs:
           # 予備（固定IDを併用したい場合のみ）
           LINE_USER_IDS: ${{ secrets.LINE_USER_IDS }}
         run: |
+          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
           python main.py
