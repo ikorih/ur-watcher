@@ -2,6 +2,7 @@
 - name: "シティコート世田谷給田"
   url: "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_5780.html"
   scope_selector: ""
+  engine: "playwright"
   # 空室が出たら通知
   appear_keywords:
     - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
@@ -12,6 +13,7 @@
 - name: "シティハイツ烏山"
   url: "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_5170.html"
   scope_selector: ""
+  engine: "playwright"
   appear_keywords:
     - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
   vanish_keywords:
@@ -20,6 +22,7 @@
 - name: "シャレール荻窪"
   url: "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_7130.html"
   scope_selector: ""
+  engine: "playwright"
   appear_keywords:
     - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
   vanish_keywords:
@@ -28,6 +31,7 @@
 - name: "シティハイツ吉祥寺通り"
   url: "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6580.html"
   scope_selector: ""
+  engine: "playwright"
   appear_keywords:
     - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
   vanish_keywords:

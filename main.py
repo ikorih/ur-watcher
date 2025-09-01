@@ -5,7 +5,7 @@ import hashlib
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from gist_state import load_state, save_state, load_json_file
 
@@ -15,17 +15,51 @@ def jitter_sleep():
     # 実行が重ならないように15〜60秒のランダム待機
     time.sleep(random.randint(15, 60))
 
-def fetch_html(url: str) -> str:
+def fetch_html_requests(url: str) -> str:
     r = requests.get(url, headers={"User-Agent": UA}, timeout=30)
     r.raise_for_status()
     return r.text
 
-def scope_html(html: str, selector: str | None) -> str:
-    if not selector:
-        return html
-    soup = BeautifulSoup(html, "html.parser")
-    node = soup.select_one(selector)
-    return str(node) if node else html
+def fetch_visible_text_playwright(url: str, selector: Optional[str]) -> str:
+    # Playwright で可視テキストを取得（innerText）
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        ctx = browser.new_context(user_agent=UA, viewport={"width":1200, "height":1600})
+        page = ctx.new_page()
+        page.goto(url, timeout=30_000, wait_until="domcontentloaded")
+        # 追加の待機（リクエスト完了やレンダリング終了を少し待つ）
+        try:
+            page.wait_for_load_state("networkidle", timeout=15_000)
+        except:
+            pass
+        if selector:
+            # セレクタが存在しない場合は body を fallback
+            loc = page.locator(selector)
+            if loc.count() > 0:
+                text = loc.first.inner_text(timeout=10_000)
+            else:
+                text = page.locator("body").inner_text(timeout=10_000)
+        else:
+            text = page.locator("body").inner_text(timeout=10_000)
+        browser.close()
+        return text
+
+def fetch_page_text(url: str, selector: Optional[str], engine: str) -> str:
+    """
+    engine: "requests" | "playwright"
+    - requests: HTMLからテキスト抽出（JS未対応）
+    - playwright: JS実行後の可視テキストで判定
+    """
+    if engine == "playwright":
+        return fetch_visible_text_playwright(url, selector)
+    # requests 経路はこれまで通り
+    html = fetch_html_requests(url)
+    if selector:
+        soup = BeautifulSoup(html, "html.parser")
+        node = soup.select_one(selector)
+        html = str(node) if node else html
+    return BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
 
 def check_keywords(text: str, keywords: List[str]) -> Dict[str, bool]:
     found = {}
@@ -86,18 +120,16 @@ def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
         selector = t.get("scope_selector") or ""
         appear = t.get("appear_keywords") or []
         vanish = t.get("vanish_keywords") or []
+        engine = (t.get("engine") or "requests").lower()
 
         key = hashlib.sha1((name + "|" + url).encode("utf-8")).hexdigest()[:16]
         prev = state.get(key, {"appear": {}, "vanish": {}, "status": None})
 
         try:
-            html = fetch_html(url)
+            text = fetch_page_text(url, selector, engine)
         except Exception as e:
             print(f"[ERROR] fetch failed: {name} {url} -> {e}")
             continue
-
-        html_scoped = scope_html(html, selector)
-        text = BeautifulSoup(html_scoped, "html.parser").get_text(" ", strip=True)
 
         cur_appear = check_keywords(text, appear)   # {kw: bool}
         cur_vanish = check_keywords(text, vanish)   # {kw: bool}

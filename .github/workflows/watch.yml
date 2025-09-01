@@ -3,12 +3,12 @@ name: Watch UR Vacancy
 on:
   schedule:
     - cron: "*/20 * * * *" # 20分ごと（UTC）
-  workflow_dispatch: # 手動実行も可
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -23,13 +23,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install --with-deps chromium
+
       - name: Run watcher
         env:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          # 予備（固定IDを併用したい場合のみ）
           LINE_USER_IDS: ${{ secrets.LINE_USER_IDS }}
         run: |
-          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
           python main.py
