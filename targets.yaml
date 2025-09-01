@@ -1,0 +1,18 @@
+# 複数URLを自由に追加できます
+- name: "○○団地A棟 空室ページ"
+  url: "https://example.ur-net.go.jp/xxxx"
+  scope_selector: "" # 必要なら "#content" などで範囲を絞る
+  appear_keywords: # 出現で通知
+    - "空室"
+    - "募集中"
+  vanish_keywords: # 消滅で通知
+    - "満室"
+    - "現在、空室はございません"
+
+- name: "△△団地B棟"
+  url: "https://example.ur-net.go.jp/yyyy"
+  scope_selector: ""
+  appear_keywords:
+    - "空室"
+  vanish_keywords:
+    - "満室"
