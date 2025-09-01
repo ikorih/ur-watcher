@@ -5,14 +5,15 @@ import hashlib
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from gist_state import load_state, save_state
+from typing import List, Dict, Tuple
+
+from gist_state import load_state, save_state, load_json_file
 
 UA = "Mozilla/5.0 (compatible; ur-vacancy-watcher/1.0)"
 
 def jitter_sleep():
-    # 10分ジョブでもアクセス集中を避けるため±30〜60秒程度の待機
-    sec = random.randint(15, 60)
-    time.sleep(sec)
+    # 同時刻に集中しないよう、15〜60秒のランダム待機
+    time.sleep(random.randint(15, 60))
 
 def fetch_html(url: str) -> str:
     r = requests.get(url, headers={"User-Agent": UA}, timeout=30)
@@ -26,41 +27,43 @@ def scope_html(html: str, selector: str | None) -> str:
     node = soup.select_one(selector)
     return str(node) if node else html
 
-def check_keywords(text: str, keywords: list[str]) -> dict:
+def check_keywords(text: str, keywords: List[str]) -> Dict[str, bool]:
     found = {}
     lower = text.lower()
     for kw in keywords or []:
-        if kw.lower() in lower:
-            found[kw] = True
-        else:
-            found[kw] = False
+        found[kw] = kw.lower() in lower
     return found
 
-def line_notify(message: str):
-    tokens = os.environ.get("LINE_NOTIFY_TOKENS", "")
-    tokens = [t.strip() for t in tokens.split(",") if t.strip()]
-    if not tokens:
-        print("[WARN] LINE_NOTIFY_TOKENS is empty")
-        return
-    for tok in tokens:
-        try:
-            requests.post(
-                "https://notify-api.line.me/api/notify",
-                headers={"Authorization": f"Bearer {tok}"},
-                data={"message": message},
-                timeout=20
-            )
-        except Exception as e:
-            print(f"[ERROR] LINE notify failed for a token: {e}")
+def line_push_to(access_token: str, user_id: str, message: str):
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "to": user_id,
+        "messages": [{"type": "text", "text": message}],
+    }
+    r = requests.post(
+        "https://api.line.me/v2/bot/message/push",
+        headers=headers,
+        json=body,
+        timeout=20,
+    )
+    if r.status_code >= 300:
+        print(f"[ERROR] LINE push failed ({user_id}): {r.status_code} {r.text}")
 
-def main():
-    jitter_sleep()
+def get_recipients() -> List[str]:
+    ids = load_json_file("recipients.json", [])
+    # 予備の手動指定（カンマ区切り）も合成可能
+    extra = [u.strip() for u in os.environ.get("LINE_USER_IDS", "").split(",") if u.strip()]
+    # 順序を保った重複排除
+    return list(dict.fromkeys(ids + extra))
 
-    with open("targets.yaml", "r", encoding="utf-8") as f:
-        targets = yaml.safe_load(f)
-
-    state = load_state()  # { target_key: { "appear":{kw:bool}, "vanish":{kw:bool} } }
-
+def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
+    """
+    returns (notifications, new_state)
+    """
+    state = load_state()
     notifications = []
 
     for t in targets:
@@ -85,7 +88,7 @@ def main():
         cur_appear = check_keywords(text, appear)  # {kw:bool}
         cur_vanish = check_keywords(text, vanish)  # {kw:bool}
 
-        # 出現検知: 前回 False → 今回 True
+        # 出現検知: 前回 False or 未登録 → 今回 True
         appeared = [kw for kw, ok in cur_appear.items() if ok and (prev["appear"].get(kw) is False or kw not in prev["appear"])]
         # 消滅検知: 前回 True → 今回 False
         vanished = [kw for kw, ok in cur_vanish.items() if (prev["vanish"].get(kw) is True) and not ok]
@@ -100,19 +103,31 @@ def main():
                 lines += [f"- {kw}" for kw in vanished]
             notifications.append("\n".join(lines))
 
-        # 状態更新（次回比較用）
-        state[key] = {
-            "appear": cur_appear,
-            "vanish": cur_vanish,
-        }
+        # 状態更新
+        state[key] = {"appear": cur_appear, "vanish": cur_vanish}
 
-    # 保存＆通知
-    save_state(state)
+    return notifications, state
+
+def main():
+    jitter_sleep()
+
+    with open("targets.yaml", "r", encoding="utf-8") as f:
+        targets = yaml.safe_load(f)
+
+    notifications, new_state = build_notifications(targets)
+
+    # 保存（次回比較用）
+    save_state(new_state)
 
     if notifications:
-        # 1通にまとめて送信（スパム防止）
         body = f"監視結果（{time.strftime('%Y-%m-%d %H:%M:%S')}）\n\n" + "\n\n".join(notifications)
-        line_notify(body)
+        access_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+        recipients = get_recipients()
+        if not access_token or not recipients:
+            print("[WARN] Missing LINE token or no recipients; skip notify.")
+            return
+        for uid in recipients:
+            line_push_to(access_token, uid, body)
     else:
         print("[INFO] No changes.")
 
