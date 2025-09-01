@@ -12,7 +12,7 @@ from gist_state import load_state, save_state, load_json_file
 UA = "Mozilla/5.0 (compatible; ur-vacancy-watcher/1.0)"
 
 def jitter_sleep():
-    # 同時刻に集中しないよう、15〜60秒のランダム待機
+    # 実行が重ならないように15〜60秒のランダム待機
     time.sleep(random.randint(15, 60))
 
 def fetch_html(url: str) -> str:
@@ -34,6 +34,22 @@ def check_keywords(text: str, keywords: List[str]) -> Dict[str, bool]:
         found[kw] = kw.lower() in lower
     return found
 
+def decide_availability(cur_appear: dict, cur_vanish: dict) -> bool:
+    """
+    True: 空きあり, False: 満室
+    ルール:
+      - appear キーワードのどれかが出ていれば「空きあり」
+      - vanish キーワードが1つも見つからなければ「空きあり」
+      - vanish キーワードのどれかが見つかれば「満室」
+    """
+    any_appear = any(cur_appear.values()) if cur_appear else False
+    any_vanish_present = any(cur_vanish.values()) if cur_vanish else False
+    if any_appear:
+        return True
+    if cur_vanish and not any_vanish_present:
+        return True
+    return False
+
 def line_push_to(access_token: str, user_id: str, message: str):
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -54,13 +70,12 @@ def line_push_to(access_token: str, user_id: str, message: str):
 
 def get_recipients() -> List[str]:
     ids = load_json_file("recipients.json", [])
-    # 予備の手動指定（カンマ区切り）も合成可能
     extra = [u.strip() for u in os.environ.get("LINE_USER_IDS", "").split(",") if u.strip()]
-    # 順序を保った重複排除
-    return list(dict.fromkeys(ids + extra))
+    return list(dict.fromkeys(ids + extra))  # 重複除去
 
 def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
     """
+    状態が変わった建物だけ通知する。
     returns (notifications, new_state)
     """
     state = load_state()
@@ -74,7 +89,7 @@ def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
         vanish = t.get("vanish_keywords") or []
 
         key = hashlib.sha1((name + "|" + url).encode("utf-8")).hexdigest()[:16]
-        prev = state.get(key, {"appear": {}, "vanish": {}})
+        prev = state.get(key, {"appear": {}, "vanish": {}, "status": None})
 
         try:
             html = fetch_html(url)
@@ -88,23 +103,26 @@ def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
         cur_appear = check_keywords(text, appear)  # {kw:bool}
         cur_vanish = check_keywords(text, vanish)  # {kw:bool}
 
-        # 出現検知: 前回 False or 未登録 → 今回 True
-        appeared = [kw for kw, ok in cur_appear.items() if ok and (prev["appear"].get(kw) is False or kw not in prev["appear"])]
-        # 消滅検知: 前回 True → 今回 False
-        vanished = [kw for kw, ok in cur_vanish.items() if (prev["vanish"].get(kw) is True) and not ok]
+        # 現在の可用状態を判定
+        available_now = decide_availability(cur_appear, cur_vanish)
+        prev_status = prev.get("status")
 
-        if appeared or vanished:
-            lines = [f"【変化検知】{name}", url]
-            if appeared:
-                lines.append("▼ 出現したキーワード")
-                lines += [f"- {kw}" for kw in appeared]
-            if vanished:
-                lines.append("▼ 消えたキーワード")
-                lines += [f"- {kw}" for kw in vanished]
+        # 状態が変わった時だけ通知
+        if prev_status is not None and (prev_status is not available_now):
+            if available_now:
+                # 空きが出た
+                lines = [f"【空きが出ました】{name}", url]
+            else:
+                # 満室に戻った
+                lines = [f"【満室に戻りました】{name}", url]
             notifications.append("\n".join(lines))
 
-        # 状態更新
-        state[key] = {"appear": cur_appear, "vanish": cur_vanish}
+        # 状態更新（次回比較用）
+        state[key] = {
+            "appear": cur_appear,
+            "vanish": cur_vanish,
+            "status": available_now,
+        }
 
     return notifications, state
 

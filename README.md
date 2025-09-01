@@ -1,8 +1,12 @@
 # UR Vacancy Watcher (GitHub Actions + LINE Messaging API)
 
-- 10分おきに対象URLをクロールし、指定キーワードの **出現**／**消滅** を検知して LINE に通知します。
-- 通知先は LINE Webhook 経由で自動収集（Gist `recipients.json`）します。
-- 前回状態は Gist `state.json` に保存し、差分のみ通知します。
+- **20分おき**に対象URLをクロールし、指定キーワードから **空きあり/満室** を判定します。
+- 判定は **状態トグル型通知**：
+  - 「満室 → 空きあり」になった時に通知
+  - 「空きあり → 満室」に戻った時に通知
+  - 状態が変わらない限り通知しない（月200通の無料枠節約）
+- 通知先は LINE Webhook で自動収集（Gist `recipients.json`）。
+- 前回状態は Gist `state.json` に保存。
 
 ## 構成
 
@@ -10,54 +14,44 @@
 - 設定（監視対象・キーワード）: `targets.yaml`
 - ロジック: `main.py`
 - Gist I/O: `gist_state.py`
-- 受信者自動収集（LINE Webhook 受け口・さくらサーバー向け）: `webhook-sakura/webhook.php`, `.htaccess`
+- 受信者自動収集（さくらレンタルサーバー向け Webhook）: `webhook-sakura/webhook.php`, `.htaccess`
 
-## 事前準備
+## 事前準備（要点）
 
-1. **Gist（Secret）** を作成
-   - `state.json` → `{}`
-   - `recipients.json` → `[]`
-   - **Gist ID** を控える。
-2. **PAT (Fine-grained)** を発行
-   - _User permissions → Gists: Read and write_
-   - これを `GIST_TOKEN` として使用。
+1. **Gist（Secret）** を用意
+   - `state.json` → `{}` / `recipients.json` → `[]` を置く
+   - **Gist ID** を控える
+2. **PAT (Fine-grained)** 発行
+   - User permissions → **Gists: Read and write**
 3. **LINE Developers**
    - Messaging API チャネル作成
-   - **チャネルアクセストークン（長期）** と **チャネルシークレット** を控える。
+   - **チャネルアクセストークン（長期）** と **チャネルシークレット**
+4. **Webhook（さくら）**
+   - `webhook-sakura/` を公開ディレクトリへアップ
+   - `.htaccess` の `SetEnv` を自分の値に置換
+   - Webhook URL を LINE の設定に登録 → 接続確認
 
-## さくらのレンタルサーバーに Webhook を設置
-
-- `webhook-sakura/` の2ファイルを公開ディレクトリへアップ（例 `/www/line-webhook/`）
-- `.htaccess` の `SetEnv` をあなたの値に書き換え
-- LINE の **Webhook URL** に `https://<your-domain>/line-webhook/webhook.php`
-- Webhook「接続確認」→ `Success`
-
-### 動作
-
-- 友だち追加 or 初回メッセージ で `userId` を Gist の `recipients.json` に追記
-- 登録者へ「登録ありがとうございます…」と1回 Push
-
-## GitHub Secrets（リポジトリの Settings → Secrets and variables → Actions）
+## GitHub Secrets（Repo Settings → Secrets and variables → Actions）
 
 - `GIST_ID` … Secret Gist の ID
 - `GIST_TOKEN` … 上記 PAT（Gists: read/write）
 - `LINE_CHANNEL_ACCESS_TOKEN` … LINE チャネルアクセストークン（長期）
 
-> 受信者IDは毎回 Gist `recipients.json` を読み込みます（SecretsにIDを入れる必要はありません）。
+> 受信者IDは毎回 Gist `recipients.json` を読み込みます（SecretsにIDは不要）。
 
 ## 監視対象の設定
 
-- `targets.yaml` を編集（複数URL可、キーワードは配列）
-- `appear_keywords` … **出現したら通知**
-- `vanish_keywords` … **消えたら通知**
-- `scope_selector` … ページ内の特定範囲だけを対象にしたい場合に CSS セレクタで指定（空なら全体）
+- `targets.yaml` を編集（複数URL可）
+- `appear_keywords` … **出現したら空きあり**
+- `vanish_keywords` … **消滅したら空きあり**（=「満室文言が消えた」）
+- `scope_selector` … CSSセレクタで監視範囲を限定（今回 `#list`）
 
 ## 手動テスト
 
-- GitHub の Actions → ワークフロー → **Run workflow**
-- 通知が届けばOK。10分ごとの定期実行は自動で動きます（UTC基準）。
+- Actions → ワークフロー → **Run workflow**
+- 受信者2名がボットに一言送信し、`recipients.json` にIDが入っていることを確認
 
 ## 注意
 
-- サイト規約と robots.txt を厳守し、過度のリクエストは避けてください。
-- LINEの無料枠・レート制限に留意してください（本スクリプトは少人数・低頻度想定）。
+- サイト規約・robots.txtを遵守し、アクセス間隔は控えめ（本設定は20分おき＋ランダム待機）。
+- LINE無料枠（月200通）は **状態変化時のみ通知**で節約。

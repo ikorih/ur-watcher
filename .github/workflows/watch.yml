@@ -2,7 +2,7 @@ name: Watch UR Vacancy
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # 10分ごと（UTC）
+    - cron: "*/20 * * * *" # 20分ごと（UTC）
   workflow_dispatch: # 手動実行も可
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          # 予備（手動の固定IDを併用したい場合のみ使用）
+          # 予備（固定IDを併用したい場合のみ）
           LINE_USER_IDS: ${{ secrets.LINE_USER_IDS }}
         run: |
           python main.py
