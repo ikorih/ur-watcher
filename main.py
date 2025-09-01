@@ -34,21 +34,19 @@ def check_keywords(text: str, keywords: List[str]) -> Dict[str, bool]:
         found[kw] = kw.lower() in lower
     return found
 
-def decide_availability(cur_appear: dict, cur_vanish: dict) -> bool:
+def decide_availability(cur_appear: dict, cur_vanish: dict):
     """
-    True: 空きあり, False: 満室
+    return: True(空きあり) / False(満室) / None(判断不能)
     ルール:
-      - appear キーワードのどれかが出ていれば「空きあり」
-      - vanish キーワードが1つも見つからなければ「空きあり」
-      - vanish キーワードのどれかが見つかれば「満室」
+      - appear のどれか True → True
+      - vanish のどれか True → False
+      - どちらもヒットなし → None（前回状態を維持）
     """
-    any_appear = any(cur_appear.values()) if cur_appear else False
-    any_vanish_present = any(cur_vanish.values()) if cur_vanish else False
-    if any_appear:
+    if cur_appear and any(cur_appear.values()):
         return True
-    if cur_vanish and not any_vanish_present:
-        return True
-    return False
+    if cur_vanish and any(cur_vanish.values()):
+        return False
+    return None
 
 def line_push_to(access_token: str, user_id: str, message: str):
     headers = {
@@ -71,7 +69,8 @@ def line_push_to(access_token: str, user_id: str, message: str):
 def get_recipients() -> List[str]:
     ids = load_json_file("recipients.json", [])
     extra = [u.strip() for u in os.environ.get("LINE_USER_IDS", "").split(",") if u.strip()]
-    return list(dict.fromkeys(ids + extra))  # 重複除去
+    # 順序を保った重複排除
+    return list(dict.fromkeys(ids + extra))
 
 def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
     """
@@ -100,20 +99,20 @@ def build_notifications(targets: List[dict]) -> Tuple[List[str], dict]:
         html_scoped = scope_html(html, selector)
         text = BeautifulSoup(html_scoped, "html.parser").get_text(" ", strip=True)
 
-        cur_appear = check_keywords(text, appear)  # {kw:bool}
-        cur_vanish = check_keywords(text, vanish)  # {kw:bool}
+        cur_appear = check_keywords(text, appear)   # {kw: bool}
+        cur_vanish = check_keywords(text, vanish)   # {kw: bool}
 
-        # 現在の可用状態を判定
-        available_now = decide_availability(cur_appear, cur_vanish)
+        decision = decide_availability(cur_appear, cur_vanish)
         prev_status = prev.get("status")
 
-        # 状態が変わった時だけ通知
-        if prev_status is not None and (prev_status is not available_now):
+        # 未知(None)のときは前回状態を維持し、通知もしない
+        available_now = prev_status if decision is None else decision
+
+        # 状態が変わった時だけ通知（prev_status が None の初回は通知しない）
+        if (prev_status is not None) and (available_now is not None) and (prev_status is not available_now):
             if available_now:
-                # 空きが出た
                 lines = [f"【空きが出ました】{name}", url]
             else:
-                # 満室に戻った
                 lines = [f"【満室に戻りました】{name}", url]
             notifications.append("\n".join(lines))
 
