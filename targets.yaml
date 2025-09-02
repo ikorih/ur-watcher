@@ -27,3 +27,21 @@
     - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
   vanish_keywords:
     - "お部屋がございません。"
+
+- name: "芦花公園"
+  url: "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6710.html"
+  scope_selector: ""
+  engine: "playwright"
+  appear_keywords:
+    - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
+  vanish_keywords:
+    - "お部屋がございません。"
+
+- name: "アクティ芦花公園"
+  url: "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6920.html"
+  scope_selector: ""
+  engine: "playwright"
+  appear_keywords:
+    - "先着順のためご希望の住戸がなくお申込みができない場合があります。"
+  vanish_keywords:
+    - "お部屋がございません。"
